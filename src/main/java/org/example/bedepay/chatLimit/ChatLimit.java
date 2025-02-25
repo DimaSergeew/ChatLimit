@@ -1,18 +1,16 @@
 package org.example.bedepay.chatLimit;
 
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.PreparedStatement;
-import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.bukkit.Statistic;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
+import org.example.bedepay.chatLimit.database.DatabaseManager;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -25,7 +23,8 @@ public final class ChatLimit extends JavaPlugin {
     private final Set<UUID> newPlayers = new HashSet<>();
     private BukkitTask checkTask;
     private CommandBlocker commandBlocker;
-    private Connection connection;
+    private DatabaseManager databaseManager;
+    private final Map<UUID, BukkitTask> checkTasks = new ConcurrentHashMap<>();
 
     @Override
     public void onEnable() {
@@ -34,9 +33,12 @@ public final class ChatLimit extends JavaPlugin {
 
         // Загружаем конфиг
         saveDefaultConfig();
+        
+        // Инициализируем менеджер базы данных
+        databaseManager = new DatabaseManager(this);
 
         // Загружаем значение из конфига и сохраняем оригинальное значение
-        configTimeLimit = getConfig().getInt("time_limit", 30);
+        configTimeLimit = getConfig().getInt("time-limit", 30);
         timeLimit = configTimeLimit * 60; // конвертируем минуты в секунды
 
         // Создаем экземпляры слушателей
@@ -45,7 +47,8 @@ public final class ChatLimit extends JavaPlugin {
         // Регистрируем слушатели
         getServer().getPluginManager().registerEvents(new ChatListener(), this);
         getServer().getPluginManager().registerEvents(commandBlocker, this);
-        getServer().getPluginManager().registerEvents(new PlayerJoinListener(), this);
+        getServer().getPluginManager().registerEvents(new PlayerJoinListener(this), this);
+        getServer().getPluginManager().registerEvents(new PlayerQuitListener(this), this);
         
         // Регистрируем команду
         var chatlimitCommand = getCommand("chatlimit");
@@ -60,9 +63,6 @@ public final class ChatLimit extends JavaPlugin {
         // Запускаем периодическую проверку каждые 30 секунд
         startCheckTask();
 
-        // Инициализация базы данных
-        initializeDatabase();
-
         // Логируем запуск плагина
         getLogger().info("ChatLimit Plugin has been enabled.");
     }
@@ -72,9 +72,21 @@ public final class ChatLimit extends JavaPlugin {
         if (checkTask != null) {
             checkTask.cancel();
         }
+        
+        // Отменяем все задачи проверки
+        for (BukkitTask task : checkTasks.values()) {
+            if (task != null) {
+                task.cancel();
+            }
+        }
+        checkTasks.clear();
         newPlayers.clear();
+        
         // Закрываем соединение с БД
-        closeDatabase();
+        if (databaseManager != null) {
+            databaseManager.closeConnection();
+        }
+        
         // Логируем остановку плагина
         getLogger().info("ChatLimit Plugin has been disabled.");
     }
@@ -119,8 +131,14 @@ public final class ChatLimit extends JavaPlugin {
     }
 
     public void reloadTimeLimit() {
-        configTimeLimit = getConfig().getInt("time_limit", 30);
+        configTimeLimit = getConfig().getInt("time-limit", 30);
         timeLimit = configTimeLimit * 60;
+        
+        // Если менеджер БД уже существует, пересоздаем его с новыми настройками
+        if (databaseManager != null) {
+            databaseManager.closeConnection();
+            databaseManager = new DatabaseManager(this);
+        }
     }
 
     public CommandBlocker getCommandBlocker() {
@@ -131,100 +149,15 @@ public final class ChatLimit extends JavaPlugin {
         return configTimeLimit;
     }
 
-    private void initializeDatabase() {
-        try {
-            Class.forName("org.sqlite.JDBC");
-            String dbPath = getDataFolder().getAbsolutePath() + "/players.db";
-            connection = DriverManager.getConnection("jdbc:sqlite:" + dbPath);
-            
-            // Включаем журналирование WAL для лучшей производительности
-            try (Statement stmt = connection.createStatement()) {
-                stmt.execute("PRAGMA journal_mode=WAL");
-            }
-
-            try (PreparedStatement stmt = connection.prepareStatement(
-                "CREATE TABLE IF NOT EXISTS verified_players (" +
-                "uuid TEXT PRIMARY KEY, " + 
-                "username TEXT NOT NULL, " +
-                "play_time INTEGER NOT NULL, " +
-                "last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")) {
-                stmt.executeUpdate();
-            }
-            getLogger().info("База данных успешно инициализирована: " + dbPath);
-        } catch (Exception e) {
-            getLogger().severe("Критическая ошибка инициализации БД: " + e.getMessage());
-            // Останавливаем плагин при проблемах с БД
-            getServer().getPluginManager().disablePlugin(this);
-        }
-    }
-
-    private void closeDatabase() {
-        try {
-            if (connection != null && !connection.isClosed()) {
-                connection.close();
-            }
-        } catch (SQLException e) {
-            getLogger().severe("Ошибка закрытия соединения с БД: " + e.getMessage());
-        }
-    }
-
     public boolean isPlayerVerified(UUID uuid) {
-        checkConnection();
-        try (PreparedStatement stmt = connection.prepareStatement(
-            "SELECT 1 FROM verified_players WHERE uuid = ? AND play_time >= ?")) {
-            
-            stmt.setString(1, uuid.toString());
-            stmt.setInt(2, configTimeLimit);
-            return stmt.executeQuery().next();
-        } catch (SQLException e) {
-            getLogger().warning("Ошибка проверки игрока: " + e.getMessage());
-            return false;
-        }
+        return databaseManager.isPlayerVerified(uuid);
     }
 
-    private void checkConnection() {
-        try {
-            if (connection == null || connection.isClosed() || !connection.isValid(2)) {
-                getLogger().warning("Восстанавливаем соединение с БД...");
-                initializeDatabase();
-            }
-        } catch (SQLException e) {
-            getLogger().severe("Ошибка проверки соединения: " + e.getMessage());
-        }
+    public void addVerifiedPlayer(Player player, long playTime) {
+        databaseManager.addVerifiedPlayer(player, playTime);
     }
 
-    public void addVerifiedPlayer(Player player, int playTime) {
-        getServer().getScheduler().runTaskAsynchronously(this, () -> {
-            checkConnection();
-            try {
-                connection.setAutoCommit(false); // Начинаем транзакцию
-                
-                try (PreparedStatement stmt = connection.prepareStatement(
-                    "INSERT OR REPLACE INTO verified_players (uuid, username, play_time) VALUES (?, ?, ?)")) {
-                    
-                    stmt.setString(1, player.getUniqueId().toString());
-                    stmt.setString(2, player.getName());
-                    stmt.setInt(3, playTime);
-                    stmt.executeUpdate();
-                }
-                
-                connection.commit(); // Фиксируем изменения
-                getLogger().info("Данные игрока " + player.getName() + " успешно сохранены");
-            } catch (SQLException e) {
-                try {
-                    connection.rollback();
-                } catch (SQLException ex) {
-                    getLogger().severe("Ошибка отката транзакции: " + ex.getMessage());
-                }
-                getLogger().warning("Ошибка сохранения данных: " + e.getMessage());
-            } finally {
-                try {
-                    connection.setAutoCommit(true);
-                } catch (SQLException e) {
-                    getLogger().warning("Ошибка восстановления авто-коммита: " + e.getMessage());
-                }
-            }
-        });
+    public Map<UUID, BukkitTask> getCheckTasks() {
+        return checkTasks;
     }
-
 }

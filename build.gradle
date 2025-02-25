@@ -1,9 +1,10 @@
 plugins {
     id 'java'
+    id 'com.gradleup.shadow' version '9.0.0-beta9'
 }
 
 group = 'org.example.bedepay'
-version = '1.0-SNAPSHOT'
+version = '1.2'
 
 repositories {
     mavenCentral()
@@ -19,10 +20,39 @@ repositories {
 
 dependencies {
     compileOnly("io.papermc.paper:paper-api:1.20.4-R0.1-SNAPSHOT")
-    implementation 'org.xerial:sqlite-jdbc:3.42.0.0'
+    implementation 'org.xerial:sqlite-jdbc:3.49.1.0'
+    implementation 'org.mariadb.jdbc:mariadb-java-client:3.5.2'
+    implementation 'com.zaxxer:HikariCP:6.2.1'
 }
 
-def targetJavaVersion = 17
+// Настройка shadowJar
+shadowJar {
+    // Явное указание, что это основной артефакт
+    archiveClassifier.set('')
+    
+    // Исключаем META-INF файлы от зависимостей
+    exclude 'META-INF/*.SF'
+    exclude 'META-INF/*.DSA'
+    exclude 'META-INF/*.RSA'
+    
+    // Переименовываем пакеты, чтобы избежать конфликтов с другими плагинами
+    relocate 'com.zaxxer.hikari', 'org.example.bedepay.chatLimit.libs.hikari'
+    relocate 'org.sqlite', 'org.example.bedepay.chatLimit.libs.sqlite'
+    relocate 'org.mariadb', 'org.example.bedepay.chatLimit.libs.mariadb'
+}
+
+// Указываем Gradle использовать shadowJar вместо обычного jar
+artifacts {
+    archives shadowJar
+}
+
+// Конфигурируем стандартную задачу jar, чтобы не создавать обычный jar-файл
+jar {
+    archiveClassifier.set('original')
+    enabled = false
+}
+
+def targetJavaVersion = 21
 java {
     def javaVersion = JavaVersion.toVersion(targetJavaVersion)
     sourceCompatibility = javaVersion
@@ -48,3 +78,6 @@ processResources {
         expand props
     }
 }
+
+// Сделаем shadowJar задачей по умолчанию вместо jar
+build.dependsOn shadowJar
