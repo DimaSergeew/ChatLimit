@@ -39,6 +39,9 @@ shadowJar {
     relocate 'com.zaxxer.hikari', 'org.example.bedepay.chatLimit.libs.hikari'
     relocate 'org.sqlite', 'org.example.bedepay.chatLimit.libs.sqlite'
     relocate 'org.mariadb', 'org.example.bedepay.chatLimit.libs.mariadb'
+    
+    // Правильно обрабатываем файлы сервисов
+    mergeServiceFiles()
 }
 
 // Указываем Gradle использовать shadowJar вместо обычного jar
