@@ -1,0 +1,19 @@
+name: ChatLimit
+version: '1.2'
+main: org.example.bedepay.chatLimit.ChatLimit
+api-version: '1.20'
+
+permissions:
+  chatlimit.bypass:
+    description: Позволяет обходить ограничения чата и команд
+    default: op
+  chatlimit.reload:
+    description: Позволяет перезагружать конфиг плагина
+    default: op
+
+commands:
+  chatlimit:
+    description: Команды управления плагином ChatLimit
+    usage: /<command> reload
+    permission: chatlimit.reload
+    permission-message: "§cУ вас нет прав для использования этой команды!"

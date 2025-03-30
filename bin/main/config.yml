@@ -1,0 +1,67 @@
+# Конфиг для плагина ChatLimit
+
+# Сообщения, которые будут отображаться игрокам
+messages:
+  # Сообщение, которое выводится игроку, если он пытается писать в чат
+  # %time% - оставшееся время в минутах
+  chat_limit: "&cВы сможете писать в чат через %time% минут игры!"
+
+  # Сообщение, которое выводится игроку, если он пытается выполнить заблокированную команду
+  # %time% - оставшееся время в минутах
+  command_blocked: "&cВы сможете использовать команды через %time% минут игры!"
+
+  # Сообщение, которое выводится при успешной перезагрузке конфигурации
+  reload: "&aКонфигурация успешно перезагружена."
+
+  # Новые сообщения
+  verification_success: "Поздравляем! Вы теперь можете писать в чат!"
+  time_remaining: "Осталось играть: %time% минут"
+
+# Время ожидания в минутах
+time-limit: 30
+
+# Заблокированные команды
+blocked_commands:
+  - "/msg"
+  - "/tell"
+  - "/w"
+  - "/whisper"
+  - "/m"
+  - "/t"
+  - "/pm"
+  - "/privatemessage"
+  - "/message"
+  - "/me"
+  - "/chatty:m"
+  - "/chatty:msg"
+  - "/chatty:tell"
+  - "/chatty:w"
+  - "/chatty:whisper"
+  - "/chatty:pm"
+  - "/chatty:message"
+  - "/chatty:dm"
+
+# Настройки базы данных
+database:
+  # Тип базы данных: sqlite или mysql
+  type: sqlite
+  
+  # Настройки MySQL/MariaDB (используются только если type: mysql)
+  mysql:
+    host: localhost
+    port: 3306
+    database: chatlimit
+    username: root
+    password: password
+    table_prefix: cl_
+    # Максимальное количество соединений в пуле
+    pool_size: 5
+    # Таймаут соединения в секундах
+    timeout: 30
+    # SSL соединение
+    useSSL: false
+
+debug: false
+
+# Добавить уникальный идентификатор сервера
+server-id: "server1"
